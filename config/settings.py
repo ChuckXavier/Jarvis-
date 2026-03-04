@@ -90,7 +90,7 @@ HMM_N_STATES = 3                    # Calm, Transition, Crisis
 # ============================================================
 # EXECUTION SETTINGS
 # ============================================================
-EXECUTION_MODE = "SHADOW"           # SHADOW | SUPERVISED | AUTONOMOUS
+EXECUTION_MODE = "AUTONOMOUS"       # SHADOW | SUPERVISED | AUTONOMOUS
 MAX_DAILY_TRADES = 10               # Maximum orders per day
 MAX_DAILY_CAPITAL_DEPLOYED_PCT = 0.20  # Max 20% of portfolio per day
 ORDER_TIMEOUT_SECONDS = 7200        # Cancel unfilled orders after 2 hours
