@@ -2,6 +2,6 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "python run_phase2.py"
+startCommand = "python run_phase3.py"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
