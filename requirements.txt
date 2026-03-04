@@ -1,0 +1,45 @@
+# ============================================================
+# JARVIS V2 - Autonomous ETF Alpha Engine
+# Python Dependencies
+# ============================================================
+
+# Core Scientific Computing
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+
+# Data Sources
+yfinance>=0.2.18
+fredapi>=0.5
+
+# Database
+psycopg2-binary>=2.9
+sqlalchemy>=2.0
+
+# Machine Learning & Statistics
+scikit-learn>=1.3
+lightgbm>=4.0
+hmmlearn>=0.3
+statsmodels>=0.14
+
+# Portfolio Optimization
+cvxpy>=1.4
+
+# Technical Analysis
+ta>=0.11
+
+# Broker Integration
+alpaca-py>=0.21
+
+# Scheduling
+APScheduler>=3.10
+
+# Dashboard
+streamlit>=1.30
+
+# Logging & Utilities
+loguru>=0.7
+python-dotenv>=1.0
+
+# Testing
+pytest>=7.0
