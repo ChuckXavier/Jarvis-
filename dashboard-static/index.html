@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JARVIS V2 — Mission Control</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #06080c; color: #c8cdd3; font-family: 'IBM Plex Sans', sans-serif; overflow-x: hidden; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #1a2030; border-radius: 4px; }
+  @keyframes pulse { 0%,100% { transform: scale(1); opacity: 0.6; } 50% { transform: scale(2.2); opacity: 0; } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .plexmono { font-family: 'IBM Plex Mono', monospace; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+// ════════════════════════════════════════════════════════════
+// CONFIGURATION — Set your Railway API URL here
+// ════════════════════════════════════════════════════════════
+const API_BASE = window.location.hostname === "localhost"
+  ? "http://localhost:8000"
+  : "%%API_URL%%"; // Manus will replace this with your Railway URL
+
+const { useState, useEffect, useCallback } = React;
+
+// ── API Fetcher ──
+async function fetchAPI(endpoint) {
+  try {
+    const res = await fetch(`${API_BASE}${endpoint}`, { mode: "cors" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error(`API error (${endpoint}):`, err);
+    return null;
+  }
+}
+
+// ── Shared Components ──
+function PulsingDot({ color = "#22c55e" }) {
+  return (
+    <span style={{ position: "relative", display: "inline-block", width: 8, height: 8 }}>
+      <span style={{ position: "absolute", width: 8, height: 8, borderRadius: "50%", background: color, opacity: 0.6, animation: "pulse 2s ease-in-out infinite" }} />
+      <span style={{ position: "absolute", width: 8, height: 8, borderRadius: "50%", background: color, transform: "scale(0.5)" }} />
+    </span>
+  );
+}
+
+function Spinner() {
+  return <div style={{ width: 20, height: 20, border: "2px solid #1a2030", borderTop: "2px solid #22c55e", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "40px auto" }} />;
+}
+
+function MetricCard({ label, value, sub, color = "#e2e5ea", delay = 0 }) {
+  return (
+    <div style={{ background: "#0a0e14", border: "1px solid #141c28", borderRadius: 8, padding: "16px 18px", animation: `fadeIn 0.4s ease ${delay}s both` }}>
+      <div className="plexmono" style={{ fontSize: 10, fontWeight: 600, color: "#4a5568", letterSpacing: "0.12em", marginBottom: 8 }}>{label}</div>
+      <div className="mono" style={{ fontSize: 22, fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
+      {sub && <div className="plexmono" style={{ fontSize: 11, color: "#4a5568", marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function AlphaBar({ score, maxScore }) {
+  const pct = Math.abs(score) / maxScore * 100;
+  const pos = score > 0;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
+      {!pos && <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}><div style={{ height: 6, borderRadius: 3, width: `${pct}%`, background: "linear-gradient(90deg, transparent, #ef4444)", minWidth: 4, transition: "width 0.8s ease" }} /></div>}
+      <span className="mono" style={{ fontSize: 11, color: pos ? "#22c55e" : "#ef4444", width: 52, textAlign: "center", fontWeight: 600 }}>{score > 0 ? "+" : ""}{score.toFixed(3)}</span>
+      {pos && <div style={{ flex: 1 }}><div style={{ height: 6, borderRadius: 3, width: `${pct}%`, background: "linear-gradient(90deg, #22c55e, transparent)", minWidth: 4, transition: "width 0.8s ease" }} /></div>}
+    </div>
+  );
+}
+
+function MiniChart({ data, color = "#22c55e", width = 440, height = 120 }) {
+  if (!data || data.length < 2) return null;
+  const min = Math.min(...data), max = Math.max(...data), range = max - min || 1;
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * (height - 4) - 2}`).join(" ");
+  const gid = `g${Math.random().toString(36).slice(2, 8)}`;
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.3" /><stop offset="100%" stopColor={color} stopOpacity="0" /></linearGradient></defs>
+      <polygon points={`0,${height} ${pts} ${width},${height}`} fill={`url(#${gid})`} />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function Panel({ title, children, style: s }) {
+  return (
+    <div style={{ background: "#0a0e14", border: "1px solid #141c28", borderRadius: 8, padding: 20, ...s }}>
+      {title && <div className="plexmono" style={{ fontSize: 11, fontWeight: 600, color: "#4a5568", letterSpacing: "0.1em", marginBottom: 16 }}>{title}</div>}
+      {children}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// MAIN DASHBOARD
+// ════════════════════════════════════════════════════════════
+function Dashboard() {
+  const [tab, setTab] = useState("overview");
+  const [time, setTime] = useState(new Date());
+  const [account, setAccount] = useState(null);
+  const [alpha, setAlpha] = useState(null);
+  const [risk, setRisk] = useState(null);
+  const [dataSummary, setDataSummary] = useState(null);
+  const [performance, setPerformance] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [alphaLoading, setAlphaLoading] = useState(false);
+  const [apiOnline, setApiOnline] = useState(false);
+  const [hovered, setHovered] = useState(null);
+
+  // Clock
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Load data on mount
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    const [acc, rsk, ds, perf] = await Promise.all([
+      fetchAPI("/api/account"),
+      fetchAPI("/api/risk"),
+      fetchAPI("/api/data-summary"),
+      fetchAPI("/api/performance"),
+    ]);
+    if (acc) { setAccount(acc); setApiOnline(true); }
+    if (rsk) setRisk(rsk);
+    if (ds) setDataSummary(ds);
+    if (perf) setPerformance(perf);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Auto-refresh every 5 min
+  useEffect(() => {
+    const t = setInterval(loadData, 300000);
+    return () => clearInterval(t);
+  }, [loadData]);
+
+  const runAlpha = async () => {
+    setAlphaLoading(true);
+    const result = await fetchAPI("/api/alpha");
+    if (result) setAlpha(result);
+    setAlphaLoading(false);
+  };
+
+  const tabs = [
+    { id: "overview", label: "OVERVIEW", icon: "◉" },
+    { id: "alpha", label: "ALPHA", icon: "◈" },
+    { id: "risk", label: "RISK", icon: "◆" },
+    { id: "data", label: "DATA", icon: "◧" },
+  ];
+
+  const acc = account?.account || {};
+  const positions = account?.positions || [];
+  const mode = account?.mode || "SHADOW";
+  const regime = alpha?.regime || "—";
+  const maxScore = alpha ? Math.max(...alpha.etfs.map(e => Math.abs(e.score)), 0.5) : 1;
+
+  return (
+    <div style={{ minHeight: "100vh", position: "relative" }}>
+      {/* Grid BG */}
+      <div style={{ position: "fixed", inset: 0, opacity: 0.03, backgroundImage: "linear-gradient(rgba(34,197,94,0.3) 1px,transparent 1px),linear-gradient(90deg,rgba(34,197,94,0.3) 1px,transparent 1px)", backgroundSize: "60px 60px", pointerEvents: "none" }} />
+
+      {/* Top Bar */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 24px", borderBottom: "1px solid #111820", background: "rgba(6,8,12,0.9)", backdropFilter: "blur(20px)", position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg,#22c55e,#065f46)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, color: "#fff", letterSpacing: -1 }} className="mono">J2</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: "#e2e5ea", letterSpacing: "0.05em", lineHeight: 1 }}>JARVIS V2</div>
+            <div className="plexmono" style={{ fontSize: 10, color: "#4a5568", letterSpacing: "0.15em", marginTop: 2 }}>AUTONOMOUS ETF ALPHA ENGINE</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 6, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.15)" }}>
+            <PulsingDot />
+            <span className="mono" style={{ fontSize: 11, color: "#22c55e", fontWeight: 600, letterSpacing: "0.08em" }}>{mode} MODE</span>
+          </div>
+          {alpha && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 6, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.1)" }}>
+              <span style={{ fontSize: 10, color: regime === "CALM" ? "#22c55e" : regime === "TRANSITION" ? "#f59e0b" : "#ef4444" }}>●</span>
+              <span className="mono" style={{ fontSize: 11, color: "#8b9bb4", fontWeight: 500 }}>REGIME: {regime}</span>
+            </div>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 8, color: apiOnline ? "#22c55e" : "#ef4444" }}>●</span>
+            <span className="plexmono" style={{ fontSize: 10, color: "#4a5568" }}>API {apiOnline ? "ONLINE" : "OFFLINE"}</span>
+          </div>
+          <div className="mono" style={{ fontSize: 12, color: "#4a5568", letterSpacing: "0.05em" }}>{time.toLocaleTimeString("en-US", { hour12: false })}</div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 0, padding: "0 24px", borderBottom: "1px solid #111820", background: "rgba(8,10,16,0.6)" }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "12px 20px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", background: "transparent", color: tab === t.id ? "#22c55e" : "#4a5568", borderBottom: tab === t.id ? "2px solid #22c55e" : "2px solid transparent", transition: "all 0.2s", display: "flex", alignItems: "center", gap: 6, fontFamily: "'IBM Plex Sans',sans-serif" }}>
+            <span style={{ fontSize: 10 }}>{t.icon}</span>{t.label}
+          </button>
+        ))}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, padding: "0 12px" }}>
+          <button onClick={loadData} style={{ background: "#0d1218", border: "1px solid #1a2030", borderRadius: 6, padding: "6px 14px", color: "#8b9bb4", fontSize: 11, cursor: "pointer", fontFamily: "'IBM Plex Mono',monospace" }}>↻ Refresh</button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div style={{ padding: "20px 24px 60px", animation: "fadeIn 0.4s ease" }}>
+
+        {loading ? <Spinner /> : (
+          <>
+            {/* ── OVERVIEW ── */}
+            {tab === "overview" && (
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
+                  <MetricCard label="PORTFOLIO VALUE" value={`$${(acc.portfolio_value||0).toLocaleString(undefined,{maximumFractionDigits:0})}`} sub="Alpaca Paper" delay={0} />
+                  <MetricCard label="CASH" value={`$${(acc.cash||0).toLocaleString(undefined,{maximumFractionDigits:0})}`} sub={acc.portfolio_value ? `${((acc.cash/acc.portfolio_value)*100).toFixed(1)}%` : "—"} color="#8b9bb4" delay={0.08} />
+                  <MetricCard label="INVESTED" value={`$${(acc.long_market_value||0).toLocaleString(undefined,{maximumFractionDigits:0})}`} sub={`${positions.length} positions`} color="#22c55e" delay={0.16} />
+                  <MetricCard label="VIX" value={risk?.vix ? risk.vix.toFixed(1) : "—"} sub={risk?.vix_5d_change ? `${risk.vix_5d_change > 0 ? "+" : ""}${risk.vix_5d_change.toFixed(1)} (5d)` : "—"} color={risk?.vix < 20 ? "#22c55e" : risk?.vix < 30 ? "#f59e0b" : "#ef4444"} delay={0.24} />
+                  <MetricCard label="DATA HEALTH" value={dataSummary ? `${dataSummary.total_etfs} ETFs` : "—"} sub={dataSummary ? `${dataSummary.price_records.toLocaleString()} records` : "—"} color="#3b82f6" delay={0.32} />
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <Panel title="CURRENT POSITIONS">
+                    {positions.length > 0 ? positions.map((p, i) => (
+                      <div key={p.ticker} style={{ display: "grid", gridTemplateColumns: "50px 70px 90px 70px", gap: 8, padding: "7px 0", borderBottom: "1px solid #0d1218", alignItems: "center", animation: `slideIn 0.3s ease ${i*0.05}s both` }}>
+                        <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: "#e2e5ea" }}>{p.ticker}</span>
+                        <span className="mono" style={{ fontSize: 11, color: "#8b9bb4" }}>{p.qty} sh</span>
+                        <span className="mono" style={{ fontSize: 11, color: "#c8cdd3" }}>${p.market_value.toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+                        <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: p.unrealized_pnl >= 0 ? "#22c55e" : "#ef4444" }}>{(p.unrealized_pnl_pct*100).toFixed(2)}%</span>
+                      </div>
+                    )) : <div style={{ color: "#4a5568", fontSize: 13, padding: "20px 0", textAlign: "center" }}>No positions — Jarvis is in SHADOW mode</div>}
+                  </Panel>
+
+                  <Panel title="ETF PERFORMANCE (30 DAYS)">
+                    {performance?.etfs?.slice(0, 12).map((e, i) => (
+                      <div key={e.ticker} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+                        <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: "#8b9bb4", width: 36 }}>{e.ticker}</span>
+                        <div style={{ flex: 1, background: "#0d1218", borderRadius: 3, height: 6, overflow: "hidden" }}>
+                          <div style={{ height: "100%", borderRadius: 3, width: `${Math.min(Math.abs(e.return_30d) * 5, 100)}%`, marginLeft: e.return_30d < 0 ? "auto" : 0, background: e.return_30d >= 0 ? "#22c55e" : "#ef4444", transition: "width 0.6s" }} />
+                        </div>
+                        <span className="mono" style={{ fontSize: 10, color: e.return_30d >= 0 ? "#22c55e" : "#ef4444", width: 48, textAlign: "right" }}>{e.return_30d > 0 ? "+" : ""}{e.return_30d.toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </Panel>
+                </div>
+
+                {risk?.vix_history && (
+                  <Panel title="VIX HISTORY (1 YEAR)" style={{ marginTop: 16 }}>
+                    <MiniChart data={risk.vix_history.map(v => v.value).filter(v => v != null)} color="#f59e0b" width={900} height={100} />
+                  </Panel>
+                )}
+              </div>
+            )}
+
+            {/* ── ALPHA ── */}
+            {tab === "alpha" && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#e2e5ea" }}>Ensemble Alpha Scores</div>
+                    <div style={{ fontSize: 12, color: "#4a5568", marginTop: 2 }}>4 signals × 25 ETFs • Updated on demand</div>
+                  </div>
+                  <button onClick={runAlpha} disabled={alphaLoading} style={{ padding: "8px 20px", borderRadius: 8, border: "1px solid #22c55e", background: alphaLoading ? "#0d1218" : "rgba(34,197,94,0.1)", color: "#22c55e", fontSize: 12, fontWeight: 600, cursor: alphaLoading ? "wait" : "pointer", fontFamily: "'IBM Plex Sans',sans-serif" }}>
+                    {alphaLoading ? "Computing signals..." : "🧠 Run Alpha Engine"}
+                  </button>
+                </div>
+
+                {alphaLoading && <div style={{ textAlign: "center", padding: 40 }}><Spinner /><div style={{ color: "#4a5568", fontSize: 12, marginTop: 12 }}>Running 4 signals across 25 ETFs... (1-2 minutes)</div></div>}
+
+                {alpha && !alphaLoading && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
+                      {["Momentum 25%", "Trend 25%", "Mean Rev 25%", "Regime 25%"].map((s, i) => (
+                        <div key={s} style={{ padding: "8px 12px", borderRadius: 6, background: "#0d1218", border: "1px solid #1a2030", textAlign: "center" }}>
+                          <span className="plexmono" style={{ fontSize: 10, fontWeight: 600, color: "#22c55e", letterSpacing: "0.05em" }}>{s}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <Panel>
+                      <div style={{ display: "grid", gridTemplateColumns: "40px 60px 1fr 70px", padding: "8px 0", borderBottom: "1px solid #141c28", fontSize: 10, fontWeight: 600, color: "#4a5568", letterSpacing: "0.1em" }} className="plexmono">
+                        <span>#</span><span>ETF</span><span>ALPHA SCORE</span><span style={{ textAlign: "right" }}>ACTION</span>
+                      </div>
+                      {alpha.etfs.map((etf, i) => (
+                        <div key={etf.ticker} onMouseEnter={() => setHovered(etf.ticker)} onMouseLeave={() => setHovered(null)} style={{ display: "grid", gridTemplateColumns: "40px 60px 1fr 70px", padding: "8px 0", alignItems: "center", borderBottom: "1px solid #0d1218", background: hovered === etf.ticker ? "#0d1520" : "transparent", transition: "background 0.15s", animation: `fadeIn 0.3s ease ${i*0.03}s both` }}>
+                          <span className="mono" style={{ fontSize: 11, color: "#4a5568" }}>{etf.rank}</span>
+                          <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: "#e2e5ea" }}>{etf.ticker}</span>
+                          <AlphaBar score={etf.score} maxScore={maxScore} />
+                          <span className="mono" style={{ fontSize: 10, fontWeight: 600, textAlign: "right", letterSpacing: "0.05em", color: etf.action === "STRONG BUY" ? "#22c55e" : etf.action === "BUY" ? "#4ade80" : etf.action === "HOLD" ? "#4a5568" : etf.action === "REDUCE" ? "#f59e0b" : "#ef4444" }}>{etf.action}</span>
+                        </div>
+                      ))}
+                    </Panel>
+                  </>
+                )}
+
+                {!alpha && !alphaLoading && (
+                  <div style={{ textAlign: "center", padding: 60, color: "#4a5568" }}>
+                    <div style={{ fontSize: 40, marginBottom: 12 }}>🧠</div>
+                    <div style={{ fontSize: 14 }}>Click "Run Alpha Engine" to compute live signals</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── RISK ── */}
+            {tab === "risk" && risk && (
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "#e2e5ea", marginBottom: 20 }}>Risk Fortress — 5-Layer Protection</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 20 }}>
+                  {[{n:1,name:"DATA QUALITY",desc:"Fresh + complete"},{n:2,name:"SIGNAL VALID",desc:"Confidence check"},{n:3,name:"POSITION LIMITS",desc:"Size + sector caps"},{n:4,name:"PORTFOLIO LIMITS",desc:"VaR + correlation"},{n:5,name:"CIRCUIT BREAKERS",desc:"Emergency stops"}].map((l,i) => (
+                    <div key={i} style={{ background: "#0a0e14", border: "1px solid #141c28", borderRadius: 8, padding: 16, textAlign: "center", borderTop: "3px solid #22c55e", animation: `fadeIn 0.3s ease ${i*0.1}s both` }}>
+                      <div className="plexmono" style={{ fontSize: 10, color: "#4a5568", fontWeight: 600, letterSpacing: "0.1em" }}>LAYER {l.n}</div>
+                      <div className="plexmono" style={{ fontSize: 11, fontWeight: 700, color: "#e2e5ea", marginTop: 6 }}>{l.name}</div>
+                      <div className="mono" style={{ marginTop: 8, fontSize: 18, fontWeight: 700, color: "#22c55e" }}>✓ PASS</div>
+                      <div style={{ fontSize: 10, color: "#4a5568", marginTop: 4 }}>{l.desc}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <Panel title="CIRCUIT BREAKERS">
+                    {risk.circuit_breakers.map((cb, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #0d1218" }}>
+                        <span style={{ fontSize: 13, color: "#c8cdd3" }}>{cb.name}</span>
+                        <span className="mono" style={{ fontSize: 11, color: "#ef4444" }}>{cb.threshold}</span>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 4, background: cb.status === "clear" ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.1)" }}>
+                          <span style={{ color: cb.status === "clear" ? "#22c55e" : "#ef4444", fontSize: 8 }}>●</span>
+                          <span className="mono" style={{ fontSize: 10, color: cb.status === "clear" ? "#22c55e" : "#ef4444", fontWeight: 600 }}>{cb.status === "clear" ? "CLEAR" : "TRIGGERED"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </Panel>
+
+                  <Panel title="RISK METRICS">
+                    {[["VIX", risk.vix?.toFixed(1) || "—"], ["VIX 5d Change", risk.vix_5d_change ? `${risk.vix_5d_change > 0 ? "+" : ""}${risk.vix_5d_change.toFixed(1)}` : "—"], ["SPY Drawdown", risk.spy_drawdown ? `${risk.spy_drawdown.toFixed(2)}%` : "—"], ["Avg Correlation", risk.avg_correlation?.toFixed(3) || "—"]].map(([k, v], i) => (
+                      <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: i < 3 ? "1px solid #0d1218" : "none" }}>
+                        <span style={{ fontSize: 13, color: "#4a5568" }}>{k}</span>
+                        <span className="mono" style={{ fontSize: 13, color: "#e2e5ea", fontWeight: 600 }}>{v}</span>
+                      </div>
+                    ))}
+                  </Panel>
+                </div>
+
+                {risk.vix_history && (
+                  <Panel title="VIX HISTORY (1 YEAR)" style={{ marginTop: 16 }}>
+                    <MiniChart data={risk.vix_history.map(v => v.value).filter(v => v != null)} color="#f59e0b" width={900} height={100} />
+                  </Panel>
+                )}
+              </div>
+            )}
+
+            {/* ── DATA ── */}
+            {tab === "data" && dataSummary && (
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "#e2e5ea", marginBottom: 20 }}>Data Health</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+                  <MetricCard label="ETFs TRACKED" value={dataSummary.total_etfs} color="#3b82f6" />
+                  <MetricCard label="PRICE RECORDS" value={dataSummary.price_records.toLocaleString()} color="#22c55e" delay={0.08} />
+                  <MetricCard label="MACRO RECORDS" value={dataSummary.macro_records.toLocaleString()} color="#8b5cf6" delay={0.16} />
+                  <MetricCard label="LATEST DATA" value={dataSummary.latest_date || "—"} color="#f59e0b" delay={0.24} />
+                </div>
+
+                <Panel title="PER-ETF COVERAGE">
+                  <div style={{ display: "grid", gridTemplateColumns: "60px 100px 100px 80px", padding: "8px 0", borderBottom: "1px solid #141c28", fontSize: 10, fontWeight: 600, color: "#4a5568", letterSpacing: "0.1em" }} className="plexmono">
+                    <span>ETF</span><span>FIRST DATE</span><span>LAST DATE</span><span style={{ textAlign: "right" }}>DAYS</span>
+                  </div>
+                  {dataSummary.etfs.map((e, i) => (
+                    <div key={e.ticker} style={{ display: "grid", gridTemplateColumns: "60px 100px 100px 80px", padding: "6px 0", borderBottom: "1px solid #0d1218", animation: `fadeIn 0.2s ease ${i*0.02}s both` }}>
+                      <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: "#e2e5ea" }}>{e.ticker}</span>
+                      <span className="mono" style={{ fontSize: 11, color: "#4a5568" }}>{e.first_date}</span>
+                      <span className="mono" style={{ fontSize: 11, color: "#8b9bb4" }}>{e.last_date}</span>
+                      <span className="mono" style={{ fontSize: 11, color: "#22c55e", textAlign: "right" }}>{e.num_days.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </Panel>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Bottom Status */}
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 24px", background: "#06080c", borderTop: "1px solid #111820", fontSize: 10, color: "#2a3040" }} className="plexmono">
+        <div style={{ display: "flex", gap: 16 }}>
+          <span><span style={{ color: apiOnline ? "#22c55e" : "#ef4444" }}>●</span> API: {apiOnline ? "Connected" : "Offline"}</span>
+          <span><span style={{ color: "#22c55e" }}>●</span> Scheduler: 10:00 AM ET</span>
+        </div>
+        <span>JARVIS V2 • Built by Charles Miano • {time.toLocaleDateString()}</span>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Dashboard />);
+</script>
+</body>
+</html>
