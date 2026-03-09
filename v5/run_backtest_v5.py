@@ -40,19 +40,40 @@ def download_data():
     for batch_start in range(0, len(all_tickers), 10):
         batch = all_tickers[batch_start:batch_start+10]
         try:
-            data = yf.download(batch, period="10y", progress=False)
-            if "Adj Close" in data.columns:
-                adj = data["Adj Close"]
+            data = yf.download(batch, period="10y", progress=False, auto_adjust=True)
+            
+            # Handle yfinance 1.2.0+ multi-level column format
+            if isinstance(data.columns, pd.MultiIndex):
+                # New format: (Price, Ticker) multi-index
+                if "Close" in data.columns.get_level_values(0):
+                    adj = data["Close"]
+                elif "Adj Close" in data.columns.get_level_values(0):
+                    adj = data["Adj Close"]
+                else:
+                    adj = pd.DataFrame()
             elif len(batch) == 1:
-                adj = data[["Adj Close"]].rename(columns={"Adj Close": batch[0]})
+                # Single ticker returns flat columns
+                if "Close" in data.columns:
+                    adj = data[["Close"]].rename(columns={"Close": batch[0]})
+                elif "Adj Close" in data.columns:
+                    adj = data[["Adj Close"]].rename(columns={"Adj Close": batch[0]})
+                else:
+                    adj = pd.DataFrame()
             else:
-                adj = data.get("Adj Close", pd.DataFrame())
+                # Fallback
+                if "Adj Close" in data.columns:
+                    adj = data["Adj Close"]
+                elif "Close" in data.columns:
+                    adj = data["Close"]
+                else:
+                    adj = pd.DataFrame()
 
             if isinstance(adj, pd.Series):
                 adj = adj.to_frame(batch[0])
 
             for col in adj.columns:
-                prices[col] = adj[col]
+                if not adj[col].dropna().empty:
+                    prices[col] = adj[col]
 
             logger.info(f"  Downloaded: {', '.join(batch)}")
         except Exception as e:
