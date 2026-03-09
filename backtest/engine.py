@@ -93,7 +93,7 @@ class Backtest:
 
         # Filter prices to backtest window (but keep prior data for feature computation)
         min_history = 252  # Need 1 year prior for features
-        history_start_idx = max(0, prices.index.get_loc(start, method="nearest") - min_history)
+        history_start_idx = max(0, prices.index.get_indexer([start], method="nearest")[0] - min_history)
 
         logger.info("=" * 60)
         logger.info("BACKTESTING JARVIS V2")
