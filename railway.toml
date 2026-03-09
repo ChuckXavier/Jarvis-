@@ -2,6 +2,5 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "python run_backtest_v4.py"
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+startCommand = "cd v5 && pip install -r requirements.txt --break-system-packages && python run_backtest_v5.py"
+restartPolicyType = "never"
