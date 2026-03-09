@@ -1,0 +1,5 @@
+numpy>=1.24
+pandas>=2.0
+yfinance>=0.2.18
+loguru>=0.7
+scipy>=1.11
