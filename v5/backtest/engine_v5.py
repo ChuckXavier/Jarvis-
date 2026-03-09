@@ -41,7 +41,7 @@ def get_allocation_matrix(regime, scores, prices, date, health_boost=0.0):
         if ul and ul in prices.columns:
             s = prices[ul].loc[:date].dropna()
             if len(s) >= 200:
-                sma_ok[ticker] = s.iloc[-1] > s.rolling(200).mean().iloc[-1]
+                sma_ok[ticker] = float(s.iloc[-1]) > float(s.rolling(200).mean().iloc[-1])
             else:
                 sma_ok[ticker] = True  # Not enough data, allow
         elif info["tier"] in (1,):
@@ -54,10 +54,10 @@ def get_allocation_matrix(regime, scores, prices, date, health_boost=0.0):
     if "SPY" in prices.columns:
         spy = prices["SPY"].loc[:date].dropna()
         if len(spy) >= 252:
-            vol_20d = spy.pct_change().tail(20).std() * np.sqrt(252)
-            vol_1y = spy.pct_change().tail(252).std() * np.sqrt(252)
-            vol_median = spy.pct_change().rolling(252).std().iloc[-1] * np.sqrt(252) if len(spy) >= 252 else vol_1y
-            vol_pctile = spy.pct_change().rolling(20).std().rank(pct=True).iloc[-1] if len(spy) >= 252 else 0.5
+            vol_20d = float(spy.pct_change().tail(20).std()) * np.sqrt(252)
+            vol_1y = float(spy.pct_change().tail(252).std()) * np.sqrt(252)
+            vol_median = float(spy.pct_change().rolling(252).std().iloc[-1]) * np.sqrt(252) if len(spy) >= 252 else vol_1y
+            vol_pctile = float(spy.pct_change().rolling(20).std().rank(pct=True).iloc[-1]) if len(spy) >= 252 else 0.5
 
             if vol_pctile > 0.75:
                 use_3x = False  # Too volatile for 3x
@@ -405,7 +405,7 @@ class BacktestV5:
             # ── Update health monitor ──
             if "SPY" in prices.columns and len(prices["SPY"].loc[:date].dropna()) >= 6:
                 spy = prices["SPY"].loc[:date].dropna()
-                weekly_ret = (spy.iloc[-1] / spy.iloc[-min(6, len(spy))]) - 1
+                weekly_ret = (float(spy.iloc[-1]) / float(spy.iloc[-min(6, len(spy))])) - 1
                 self.health_monitor.record(date, regime, weekly_ret)
 
             health_boost = self.health_monitor.get_defensive_boost()

@@ -42,9 +42,9 @@ def detect_regime_for_date(prices, date, vix_series, credit_spread=None, yield_c
     if "SPY" in prices.columns:
         spy = prices["SPY"].loc[:date].dropna()
         if len(spy) >= 200:
-            sma200 = spy.rolling(200).mean().iloc[-1]
-            sma50 = spy.rolling(50).mean().iloc[-1]
-            price = spy.iloc[-1]
+            sma200 = float(spy.rolling(200).mean().iloc[-1])
+            sma50 = float(spy.rolling(50).mean().iloc[-1])
+            price = float(spy.iloc[-1])
 
             if price > sma200 and sma50 > sma200:  # Golden cross + above 200
                 votes["spy_sma"] = ("EUPHORIA" if price > sma200 * 1.10 else "CALM", 0.20)
@@ -59,8 +59,8 @@ def detect_regime_for_date(prices, date, vix_series, credit_spread=None, yield_c
     if vix_series is not None and not vix_series.empty:
         vb = vix_series.loc[:date].dropna()
         if len(vb) >= 21:
-            vix_21d_avg = vb.tail(21).mean()
-            vix_now = vb.iloc[-1]
+            vix_21d_avg = float(vb.tail(21).mean())
+            vix_now = float(vb.iloc[-1])
             if vix_now < vix_21d_avg * 0.85:
                 votes["vix_trend"] = ("CALM", 0.10)
             elif vix_now > vix_21d_avg * 1.30:
@@ -76,7 +76,7 @@ def detect_regime_for_date(prices, date, vix_series, credit_spread=None, yield_c
             for t in equity_tickers:
                 s = prices[t].loc[:date].dropna()
                 if len(s) >= 200:
-                    if s.iloc[-1] > s.rolling(200).mean().iloc[-1]:
+                    if float(s.iloc[-1]) > float(s.rolling(200).mean().iloc[-1]):
                         above_sma += 1
             breadth = above_sma / len(equity_tickers)
             if breadth >= 0.8:
@@ -90,8 +90,8 @@ def detect_regime_for_date(prices, date, vix_series, credit_spread=None, yield_c
     if "SPY" in prices.columns:
         spy = prices["SPY"].loc[:date].dropna()
         if len(spy) >= 252:
-            peak = spy.tail(252).max()
-            dd = (spy.iloc[-1] / peak) - 1
+            peak = float(spy.tail(252).max())
+            dd = (float(spy.iloc[-1]) / peak) - 1
             if dd > -0.05:
                 votes["drawdown"] = ("CALM", 0.10)
             elif dd > -0.10:
@@ -129,7 +129,7 @@ def detect_regime_for_date(prices, date, vix_series, credit_spread=None, yield_c
     if vix_series is not None and not vix_series.empty:
         vb = vix_series.loc[:date].dropna()
         if len(vb) >= 6:
-            vix_5d_change = (vb.iloc[-1] / vb.iloc[-6]) - 1
+            vix_5d_change = (float(vb.iloc[-1]) / float(vb.iloc[-6])) - 1
             if vix_5d_change > 0.50:
                 votes["vix_spike"] = ("CRISIS", 0.10)
             elif vix_5d_change > 0.30:
@@ -149,7 +149,7 @@ def detect_regime_for_date(prices, date, vix_series, credit_spread=None, yield_c
     if "SPY" in prices.columns:
         spy = prices["SPY"].loc[:date].dropna()
         if len(spy) >= 6:
-            weekly_return = (spy.iloc[-1] / spy.iloc[-6]) - 1
+            weekly_return = (float(spy.iloc[-1]) / float(spy.iloc[-6])) - 1
             if weekly_return < -0.05:
                 winner = max(winner, "STRESS", key=_regime_severity)
             if weekly_return < -0.10:
