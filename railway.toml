@@ -1,2 +1,2 @@
 [deploy]
-startCommand = "cd v41 && pip install yfinance pandas numpy loguru --break-system-packages && python run_v41.py"
+startCommand = "python start.py"
