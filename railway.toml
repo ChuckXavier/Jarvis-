@@ -1,6 +1,2 @@
-[build]
-builder = "nixpacks"
-
 [deploy]
-startCommand = "cd v5 && pip install -r requirements.txt --break-system-packages && python run_backtest_v5.py"
-restartPolicyType = "never"
+startCommand = "python start.py"
