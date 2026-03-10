@@ -11,6 +11,10 @@ so it can run independently of the Jarvis V1-V4 database.
 """
 
 import sys, os
+import warnings
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+
 import pandas as pd
 import numpy as np
 from loguru import logger
