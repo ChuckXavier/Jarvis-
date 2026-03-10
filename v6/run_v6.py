@@ -61,7 +61,13 @@ def main():
     r6 = BacktestV6({"initial_capital":100000}).run(prices, vix)
     m6 = r6.get("metrics", {})
 
-    start_date = pd.DataFrame(r6.get("portfolio_history",[])).iloc[0]["date"] if r6.get("portfolio_history") else prices.index[300]
+    ph = r6.get("portfolio_history")
+    if isinstance(ph, pd.DataFrame) and not ph.empty:
+        start_date = ph.iloc[0]["date"]
+    elif isinstance(ph, list) and len(ph) > 0:
+        start_date = pd.DataFrame(ph).iloc[0]["date"]
+    else:
+        start_date = prices.index[300]
     spy = spy_bm(prices, start_date)
 
     m4 = {"annualized_return":0.069,"sharpe_ratio":0.26,"max_drawdown":-0.163,
