@@ -118,7 +118,7 @@ class BacktestV6:
             pv = cash
             for t, pos in positions.items():
                 if t in prices.columns and date in prices.index:
-                    px = prices.loc[date, t]
+                    px = float(prices.loc[date, t])
                     if pd.notna(px):
                         pv += pos["qty"] * px
 
@@ -304,7 +304,7 @@ class BacktestV6:
         qqq = prices["QQQ"].loc[:date].dropna()
         if len(qqq) < 200:
             return True
-        return qqq.iloc[-1] > qqq.rolling(200).mean().iloc[-1]
+        return float(qqq.iloc[-1]) > float(qqq.rolling(200).mean().iloc[-1])
 
     def _check_sma_with_buffer(self, prices, date):
         """SMA check with 3% buffer zone."""
@@ -314,8 +314,8 @@ class BacktestV6:
         if len(qqq) < 200:
             return "ABOVE"
 
-        sma = qqq.rolling(200).mean().iloc[-1]
-        price = qqq.iloc[-1]
+        sma = float(qqq.rolling(200).mean().iloc[-1])
+        price = float(qqq.iloc[-1])
         buffer = self.config["sma_buffer"]
 
         if price > sma * (1 + buffer):
@@ -345,7 +345,7 @@ class BacktestV6:
             return 0
         rv = spy.pct_change().tail(10).std() * np.sqrt(252)
 
-        spread = iv - rv
+        spread = float(iv) - float(rv)
         return spread if spread > 0 else -abs(spread)
 
     def _compute_momentum(self, prices, date, current_holdings):
@@ -362,9 +362,9 @@ class BacktestV6:
             if len(s) < 252:
                 continue
 
-            r3m = (s.iloc[-1] / s.iloc[-63]) - 1 if len(s) >= 63 else 0
-            r6m = (s.iloc[-1] / s.iloc[-126]) - 1 if len(s) >= 126 else 0
-            r12m = (s.iloc[-1] / s.iloc[-252]) - 1 if len(s) >= 252 else 0
+            r3m = (float(s.iloc[-1]) / float(s.iloc[-63])) - 1 if len(s) >= 63 else 0
+            r6m = (float(s.iloc[-1]) / float(s.iloc[-126])) - 1 if len(s) >= 126 else 0
+            r12m = (float(s.iloc[-1]) / float(s.iloc[-252])) - 1 if len(s) >= 252 else 0
 
             score = w3 * r3m + w6 * r6m + w12 * r12m
 
@@ -418,7 +418,7 @@ class BacktestV6:
         current_w = {}
         for t, pos in positions.items():
             if t in prices.columns:
-                px = prices.loc[date, t]
+                px = float(prices.loc[date, t])
                 if pd.notna(px) and pv > 0:
                     current_w[t] = (pos["qty"] * px) / pv
 
@@ -434,7 +434,7 @@ class BacktestV6:
             if abs(diff) < self.config["drift_threshold"]:
                 continue
 
-            px = prices.loc[date, t] if t in prices.columns else None
+            px = float(prices.loc[date, t]) if t in prices.columns else None
             if px is None or pd.isna(px) or px <= 0:
                 continue
 
@@ -465,7 +465,7 @@ class BacktestV6:
         cash = 0
         for t in list(positions.keys()):
             if t in prices.columns:
-                px = prices.loc[date, t]
+                px = float(prices.loc[date, t])
                 if pd.notna(px):
                     val = positions[t]["qty"] * px
                     cost = abs(val) * (cost_bps / 10000)
@@ -481,7 +481,7 @@ class BacktestV6:
         """Enter safety allocation."""
         for t, w in SAFETY_ALLOCATION.items():
             if t in prices.columns:
-                px = prices.loc[date, t]
+                px = float(prices.loc[date, t])
                 if pd.notna(px) and px > 0:
                     trade_val = pv * w
                     shares = trade_val / px
