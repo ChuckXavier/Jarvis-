@@ -1,2 +1,2 @@
 [deploy]
-startCommand = "python start.py"
+startCommand = "python -c \"from data.ingest import run_daily_update; run_daily_update()\""
