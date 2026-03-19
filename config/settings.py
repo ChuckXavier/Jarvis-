@@ -47,17 +47,17 @@ DATA_REFRESH_MINUTE = 0
 # ============================================================
 # RISK LIMITS (The Risk Fortress - Layer 3-5)
 # ============================================================
-MAX_SINGLE_POSITION_PCT = 0.10      # No single ETF > 10% of portfolio
-MAX_SECTOR_EXPOSURE_PCT = 0.20      # No single sector > 20%
-MAX_POSITIONS = 20                   # Maximum concurrent positions
-MIN_POSITION_PCT = 0.01             # Minimum position size (1%)
+MAX_SINGLE_POSITION_PCT = 0.25      # V4.2: allow 25% per position (leveraged ETFs need this)
+MAX_SECTOR_EXPOSURE_PCT = 0.50      # V4.2: allow 50% sector (leveraged tech can be 2x20%)
+MAX_POSITIONS = 8                    # V4.2: holds 5-7 positions max
+MIN_POSITION_PCT = 0.01             # V4.2: allow smaller positions
 STOP_LOSS_PCT = -0.08               # -8% stop loss per position
 TRAILING_STOP_PCT = -0.05           # -5% trailing stop from peak
 
 MAX_DAILY_VAR_PCT = 0.02            # 2% daily Value at Risk limit
 MAX_DRAWDOWN_PCT = -0.15            # -15% maximum drawdown
 MAX_AVG_CORRELATION = 0.70          # Maximum average pairwise correlation
-MIN_CASH_RESERVE_PCT = 0.05         # Always keep 5% in cash
+MIN_CASH_RESERVE_PCT = 0.00         # V4.2: ZERO cash reserve (zero cash drag)
 
 # Circuit Breakers
 CIRCUIT_DAILY_LOSS_PCT = -0.03      # Halt if down 3% in a day
@@ -68,11 +68,11 @@ CIRCUIT_VIX_THRESHOLD = 35.0        # Reduce positions if VIX > 35
 # ============================================================
 # PORTFOLIO CONSTRUCTION
 # ============================================================
-CORE_ALLOCATION_PCT = 0.60          # 60% to risk parity core
-SATELLITE_ALLOCATION_PCT = 0.35     # 35% to alpha-driven satellite
-CASH_RESERVE_PCT = 0.05             # 5% cash buffer
+CORE_ALLOCATION_PCT = 0.95          # V4.2: allow 95% invested
+SATELLITE_ALLOCATION_PCT = 0.05   # V4.2: minimal (V4.2 doesn't use satellite)
+CASH_RESERVE_PCT = 0.00             # V4.2: ZERO cash buffer
 
-KELLY_MULTIPLIER = 0.25             # Quarter-Kelly (conservative)
+KELLY_MULTIPLIER = 1.0              # V4.2: full position sizing (no Kelly scaling)
 REBALANCE_DRIFT_THRESHOLD = 0.20    # Rebalance if position drifts 20%
 
 # ============================================================
