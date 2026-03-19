@@ -51,7 +51,7 @@ MAX_SINGLE_POSITION_PCT = 0.25      # V4.2: allow 25% per position (leveraged ET
 MAX_SECTOR_EXPOSURE_PCT = 0.50      # V4.2: allow 50% sector (leveraged tech can be 2x20%)
 MAX_POSITIONS = 8                    # V4.2: holds 5-7 positions max
 MIN_POSITION_PCT = 0.01             # V4.2: allow smaller positions
-STOP_LOSS_PCT = -0.08               # -8% stop loss per position
+STOP_LOSS_PCT = -0.25               # V4.2: -25% stop loss (V4.2 uses 200-SMA + circuit breakers for risk)
 TRAILING_STOP_PCT = -0.05           # -5% trailing stop from peak
 
 MAX_DAILY_VAR_PCT = 0.02            # 2% daily Value at Risk limit

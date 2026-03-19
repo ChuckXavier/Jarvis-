@@ -208,7 +208,8 @@ def _layer3_position_limits(weights: dict, current_positions: dict, portfolio_va
                 if sector_map.get(ticker) == sector and weight > 0:
                     adjusted[ticker] = weight * scale
 
-    # 3e: Check stop-losses on current positions
+    # 3e: Check stop-losses on current positions (V4.2: advisory only, does NOT block)
+    # V4.2 handles risk through 200-SMA regime switch + portfolio circuit breakers
     for ticker, pos_info in current_positions.items():
         if isinstance(pos_info, dict) and "entry_price" in pos_info and "current_price" in pos_info:
             entry = pos_info["entry_price"]
@@ -216,8 +217,9 @@ def _layer3_position_limits(weights: dict, current_positions: dict, portfolio_va
             if entry > 0:
                 pnl_pct = (current / entry) - 1
                 if pnl_pct <= STOP_LOSS_PCT:
-                    adjusted[ticker] = 0.0  # Force close
-                    rejections.append(f"STOP-LOSS: {ticker} is down {pnl_pct:.1%} (limit: {STOP_LOSS_PCT:.0%})")
+                    # V4.2: Log as warning, do NOT reject or force-close
+                    # The 200-SMA switch and circuit breakers handle risk at portfolio level
+                    warnings.append(f"STOP-LOSS ALERT: {ticker} is down {pnl_pct:.1%} (threshold: {STOP_LOSS_PCT:.0%})")
 
     logger.info(f"  Layer 3 (Position Limits): {len(rejections)} rejections, {len(warnings)} warnings")
     return {"adjusted_weights": adjusted, "rejections": rejections, "warnings": warnings}
