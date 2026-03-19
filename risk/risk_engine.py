@@ -232,12 +232,13 @@ def _layer4_portfolio_limits(weights: dict, prices: pd.DataFrame, portfolio_valu
     adjusted = weights.copy()
     warnings = []
 
-    # 4a: Ensure minimum cash reserve
+    # 4a: Ensure minimum cash reserve (V4.2: allow full investment)
     total_invested = sum(w for w in adjusted.values() if w > 0)
-    if total_invested > (1.0 - MIN_CASH_RESERVE_PCT):
-        scale = (1.0 - MIN_CASH_RESERVE_PCT) / total_invested
+    max_allocation = 1.0 - MIN_CASH_RESERVE_PCT  # V4.2: MIN_CASH_RESERVE_PCT=0.00 → max=1.0
+    if total_invested > max_allocation + 0.05:  # Only scale if >105% (small buffer for rounding)
+        scale = max_allocation / total_invested
         adjusted = {k: v * scale if v > 0 else v for k, v in adjusted.items()}
-        warnings.append(f"Scaled positions to maintain {MIN_CASH_RESERVE_PCT:.0%} cash reserve")
+        warnings.append(f"Scaled positions from {total_invested:.1%} to maintain {MIN_CASH_RESERVE_PCT:.0%} cash reserve")
 
     # 4b: Estimate portfolio VaR (simplified parametric VaR)
     try:
