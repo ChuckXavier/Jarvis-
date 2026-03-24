@@ -1,2 +1,2 @@
 [deploy]
-startCommand = "python start.py"
+startCommand = "python -c 'from data.stock_universe import update_stock_universe; print(update_stock_universe())'"
