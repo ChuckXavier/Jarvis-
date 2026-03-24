@@ -21,6 +21,7 @@ import sys
 import os
 from datetime import datetime
 from loguru import logger
+import pandas as pd
 
 # Set up logging
 os.makedirs("logs", exist_ok=True)
@@ -48,6 +49,16 @@ def run_daily_pipeline():
         download_fred_data(years=1)
         download_vix_from_yahoo(years=1)
         results["data_update"] = f"{len(etf_result.get('success', []))} ETFs updated"
+
+        # ── Step 1b: Update Stock Universe (60/40 Combined) ──
+        logger.info("\n--- STEP 1b: Updating stock universe ---")
+        try:
+            from data.stock_universe import update_stock_universe
+            stock_result = update_stock_universe()
+            results["stock_update"] = f"{stock_result.get('success', 0)} stocks updated"
+        except Exception as e:
+            logger.warning(f"Stock universe update failed: {e}")
+            results["stock_update"] = f"FAILED: {e}"
 
         # ── Step 2: Data Quality Check ──
         logger.info("\n--- STEP 2: Data quality check ---")
@@ -96,6 +107,18 @@ def run_daily_pipeline():
 
         # ── Step 5: Optimize Portfolio ──
         logger.info("\n--- STEP 5: Optimizing portfolio ---")
+
+        # Load stock prices and combine with ETF prices (60/40 Combined)
+        try:
+            from data.stock_universe import get_stock_prices
+            stock_prices = get_stock_prices()
+            if not stock_prices.empty:
+                prices = pd.concat([prices, stock_prices], axis=1)
+                prices = prices.loc[:, ~prices.columns.duplicated()]
+                logger.info(f"  Combined: {len(prices.columns)} instruments")
+        except Exception as e:
+            logger.warning(f"  Stock prices not available: {e}")
+
         from portfolio.optimizer import optimize_portfolio
 
         optimization = optimize_portfolio(alpha_scores, prices, portfolio_value)
@@ -130,7 +153,9 @@ def run_daily_pipeline():
         from portfolio.rebalancer import generate_rebalance_orders
         from config.universe import get_all_tickers
 
-        current_prices = executor.get_current_prices(get_all_tickers())
+        # Get all tickers that need pricing: ETF universe + any stock targets
+        all_needed_tickers = list(set(get_all_tickers()) | set(approved_weights.keys()))
+        current_prices = executor.get_current_prices(all_needed_tickers)
 
         orders = generate_rebalance_orders(
             target_weights=approved_weights,

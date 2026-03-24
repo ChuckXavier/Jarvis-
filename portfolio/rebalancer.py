@@ -73,23 +73,76 @@ def generate_rebalance_orders(
         # Check if drift exceeds threshold
         if target_w > 0:
             drift_pct = abs(diff_w) / target_w
+        elif target_w < 0:
+            # Short position — drift relative to absolute target
+            drift_pct = abs(diff_w) / abs(target_w)
         elif current_w > 0 and target_w == 0:
             drift_pct = 1.0  # Need to close entire position
+        elif current_w < 0 and target_w == 0:
+            drift_pct = 1.0  # Need to close short position
         else:
             continue  # Both zero, skip
 
         if drift_pct < REBALANCE_DRIFT_THRESHOLD and abs(diff_w) < 0.01:
             continue  # Drift too small, not worth trading
 
-        # Calculate order
-        target_value = portfolio_value * target_w
-        current_value = portfolio_value * current_w
-        trade_value = target_value - current_value
-
         price = current_prices.get(ticker, 0)
         if price <= 0:
             logger.warning(f"{ticker}: No price available, skipping")
             continue
+
+        # Handle short positions (negative target weights)
+        if target_w < 0:
+            target_shares = (portfolio_value * abs(target_w)) / price
+            current_short_shares = abs(current_weights.get(ticker, 0)) * portfolio_value / price if current_w < 0 else 0
+
+            if ticker not in current_positions and current_w >= 0:
+                # Open new short position
+                orders.append({
+                    "ticker": ticker,
+                    "side": "sell",
+                    "quantity": round(target_shares, 4),
+                    "estimated_value": round(target_shares * price, 2),
+                    "current_weight": round(current_w, 4),
+                    "target_weight": round(target_w, 4),
+                    "drift_pct": round(drift_pct, 4),
+                    "reason": f"Short: {current_w:.1%} → {target_w:.1%}",
+                })
+            elif current_w > 0:
+                # Close long and open short
+                close_shares = (portfolio_value * current_w) / price
+                total_sell = close_shares + target_shares
+                orders.append({
+                    "ticker": ticker,
+                    "side": "sell",
+                    "quantity": round(total_sell, 4),
+                    "estimated_value": round(total_sell * price, 2),
+                    "current_weight": round(current_w, 4),
+                    "target_weight": round(target_w, 4),
+                    "drift_pct": round(drift_pct, 4),
+                    "reason": f"Reverse to short: {current_w:.1%} → {target_w:.1%}",
+                })
+            else:
+                # Adjust existing short
+                diff_shares = abs(target_shares - current_short_shares)
+                if diff_shares > 0.001:
+                    side = "sell" if target_shares > current_short_shares else "buy"
+                    orders.append({
+                        "ticker": ticker,
+                        "side": side,
+                        "quantity": round(diff_shares, 4),
+                        "estimated_value": round(diff_shares * price, 2),
+                        "current_weight": round(current_w, 4),
+                        "target_weight": round(target_w, 4),
+                        "drift_pct": round(drift_pct, 4),
+                        "reason": f"Adjust short: {current_w:.1%} → {target_w:.1%}",
+                    })
+            continue
+
+        # Standard long position logic
+        target_value = portfolio_value * target_w
+        current_value = portfolio_value * current_w
+        trade_value = target_value - current_value
 
         # Calculate shares (Alpaca supports fractional shares)
         shares = abs(trade_value) / price

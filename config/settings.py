@@ -49,7 +49,7 @@ DATA_REFRESH_MINUTE = 0
 # ============================================================
 MAX_SINGLE_POSITION_PCT = 0.25      # V4.2: allow 25% per position (leveraged ETFs need this)
 MAX_SECTOR_EXPOSURE_PCT = 0.50      # V4.2: allow 50% sector (leveraged tech can be 2x20%)
-MAX_POSITIONS = 8                    # V4.2: holds 5-7 positions max
+MAX_POSITIONS = 35                   # 60/40 Combined: 15 stock longs + 10 stock shorts + 5 ETFs + buffer
 MIN_POSITION_PCT = 0.01             # V4.2: allow smaller positions
 STOP_LOSS_PCT = -0.25               # V4.2: -25% stop loss (V4.2 uses 200-SMA + circuit breakers for risk)
 TRAILING_STOP_PCT = -0.05           # -5% trailing stop from peak
@@ -91,8 +91,8 @@ HMM_N_STATES = 3                    # Calm, Transition, Crisis
 # EXECUTION SETTINGS
 # ============================================================
 EXECUTION_MODE = "AUTONOMOUS"       # SHADOW | SUPERVISED | AUTONOMOUS
-MAX_DAILY_TRADES = 10               # Maximum orders per day
-MAX_DAILY_CAPITAL_DEPLOYED_PCT = 0.20  # Max 20% of portfolio per day
+MAX_DAILY_TRADES = 40               # 60/40 Combined: up to 30 positions may need rebalancing
+MAX_DAILY_CAPITAL_DEPLOYED_PCT = 1.00  # 60/40 Combined: allow full rebalance on strategy switch
 ORDER_TIMEOUT_SECONDS = 7200        # Cancel unfilled orders after 2 hours
 
 # ============================================================
