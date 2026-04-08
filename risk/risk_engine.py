@@ -126,10 +126,13 @@ def _layer1_data_quality(prices: pd.DataFrame) -> dict:
         errors.append(f"Only {etfs_with_data} ETFs have current data (need 20+)")
 
     # Check for price anomalies in last day
+    # V4.3: Raised thresholds for 60/40 strategy — leveraged ETFs (SSO, QLD, ROM,
+    # DIG, UYG) routinely swing 15-20% on crash days. Old threshold (>15%, >3 ETFs)
+    # caused false positives during the April 2026 tariff selloff.
     daily_returns = prices.pct_change().iloc[-1]
-    extreme_moves = daily_returns[daily_returns.abs() > 0.15]
-    if len(extreme_moves) > 3:
-        errors.append(f"{len(extreme_moves)} ETFs moved >15% in one day — possible data error")
+    extreme_moves = daily_returns[daily_returns.abs() > 0.25]
+    if len(extreme_moves) > 6:
+        errors.append(f"{len(extreme_moves)} instruments moved >25% in one day — possible data error")
 
     passed = len(errors) == 0
     logger.info(f"  Layer 1 (Data Quality): {'PASS' if passed else 'FAIL'}")
