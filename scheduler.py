@@ -27,12 +27,17 @@ import pandas as pd
 os.makedirs("logs", exist_ok=True)
 logger.add("logs/scheduler.log", rotation="10 MB", retention="30 days", level="INFO")
 
+# ── Track previous mode for SAFETY transition detection ──
+_previous_mode = None
+
 
 def run_daily_pipeline():
     """
     Run the complete daily trading pipeline.
     This is the MAIN function that produces trading decisions.
     """
+    global _previous_mode
+
     start_time = datetime.now()
     logger.info("=" * 60)
     logger.info(f"JARVIS V2 — DAILY PIPELINE — {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -123,9 +128,44 @@ def run_daily_pipeline():
 
         optimization = optimize_portfolio(alpha_scores, prices, portfolio_value)
         target_weights = optimization["target_weights"]
+        current_mode = optimization.get("mode", "ACTIVE")
 
         results["target_positions"] = optimization["expected_positions"]
         results["cash_pct"] = optimization["cash_pct"]
+        results["mode"] = current_mode
+
+        # ══════════════════════════════════════════════════════════
+        # FIX 5: SAFETY MODE LIQUIDATION
+        # When switching from ACTIVE → SAFETY, use Alpaca API to
+        # close ALL non-safety positions directly. This prevents
+        # stranded stock positions that the rebalancer can't sell.
+        # ══════════════════════════════════════════════════════════
+        if current_mode == "SAFETY" and _previous_mode == "ACTIVE":
+            logger.info("\n--- SAFETY MODE TRANSITION — Liquidating non-safety positions ---")
+            safety_tickers = set(target_weights.keys())
+            liquidation_results = []
+
+            for ticker, pos_info in current_positions.items():
+                if ticker not in safety_tickers:
+                    result = executor.close_position(ticker)
+                    liquidation_results.append(result)
+                    qty = pos_info.get("qty", 0) if isinstance(pos_info, dict) else 0
+                    mv = pos_info.get("market_value", 0) if isinstance(pos_info, dict) else 0
+                    logger.info(f"  Liquidated {ticker}: {qty:.4f} shares (${mv:,.2f})")
+
+            closed = sum(1 for r in liquidation_results if r["status"] == "SUBMITTED")
+            failed = sum(1 for r in liquidation_results if r["status"] == "FAILED")
+            logger.info(f"  Liquidation complete: {closed} closed, {failed} failed")
+            results["safety_liquidation"] = f"{closed} positions closed"
+
+            # Refresh positions and account after liquidation
+            time.sleep(2)  # Brief pause for orders to settle
+            current_positions = executor.get_current_positions()
+            account = executor.get_account_info()
+            portfolio_value = account.get("portfolio_value", 0)
+
+        # Update mode tracker for next run
+        _previous_mode = current_mode
 
         # ── Step 6: Risk Validation ──
         logger.info("\n--- STEP 6: Risk validation ---")
@@ -153,9 +193,30 @@ def run_daily_pipeline():
         from portfolio.rebalancer import generate_rebalance_orders
         from config.universe import get_all_tickers
 
-        # Get all tickers that need pricing: ETF universe + any stock targets
-        all_needed_tickers = list(set(get_all_tickers()) | set(approved_weights.keys()))
+        # ══════════════════════════════════════════════════════════
+        # FIX 2: Fetch prices for ALL held positions + targets
+        # The old code only fetched ETF universe prices, causing
+        # "No price available" for stock positions. Now we fetch
+        # prices for: ETF universe + target tickers + held positions.
+        # ══════════════════════════════════════════════════════════
+        all_needed_tickers = list(set(
+            get_all_tickers()                      # ETF universe
+            | set(approved_weights.keys())          # Target portfolio tickers
+            | set(current_positions.keys())         # Currently held positions
+        ))
+        logger.info(f"  Fetching prices for {len(all_needed_tickers)} tickers "
+                     f"(ETFs + targets + held positions)")
         current_prices = executor.get_current_prices(all_needed_tickers)
+        logger.info(f"  Got prices for {len(current_prices)} tickers")
+
+        # Also inject prices from Alpaca position data for any tickers
+        # that the quote API didn't return (belt-and-suspenders)
+        for ticker, pos_info in current_positions.items():
+            if ticker not in current_prices and isinstance(pos_info, dict):
+                price = pos_info.get("current_price", 0)
+                if price > 0:
+                    current_prices[ticker] = price
+                    logger.info(f"  Price for {ticker} from position data: ${price:.2f}")
 
         orders = generate_rebalance_orders(
             target_weights=approved_weights,
