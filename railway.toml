@@ -1,2 +1,2 @@
 [deploy]
-startCommand = "python start.py"
+startCommand = "python -c 'from scheduler import run_daily_pipeline; run_daily_pipeline()'"
