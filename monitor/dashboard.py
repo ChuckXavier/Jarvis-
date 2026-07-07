@@ -320,17 +320,21 @@ elif page == "🧠 Alpha Scores":
         if st.button("🧠 Run Alpha Engine Now", type="primary"):
             with st.spinner("Computing features and signals... (1-2 minutes)"):
                 try:
-                    from signals.ensemble import compute_ensemble, get_top_bottom_etfs
-                    result = compute_ensemble(prices)
+                    from signals.ensemble import compute_ensemble
+                    from risk.regime import get_current_regime
+                    # persist=False: viewing the dashboard must not adapt/save
+                    # the live IC weights — only the scheduler's daily run does.
+                    result = compute_ensemble(prices, persist=False)
                     latest = result["latest_scores"]
-                    regime = result["regime"]
+                    regime = get_current_regime()["regime"]
 
                     regime_class = f"regime-{regime.lower()}"
                     st.markdown(f'### Market Regime: <span class="{regime_class}">{regime}</span>',
                                unsafe_allow_html=True)
 
+                    n_signals = len(result["weights_used"])
                     col1, col2, col3 = st.columns(3)
-                    col1.metric("Active Signals", "4 / 4")
+                    col1.metric("Active Signals", f"{n_signals} / {n_signals}")
                     col2.metric("ETFs Scored", f"{len(latest)}")
                     col3.metric("Regime", regime)
 
@@ -340,7 +344,8 @@ elif page == "🧠 Alpha Scores":
                         chart_data = latest.sort_values(ascending=True)
                         st.bar_chart(chart_data, horizontal=True)
 
-                        top_bottom = get_top_bottom_etfs(latest, top_n=5)
+                        valid = latest.dropna().sort_values(ascending=False)
+                        top_bottom = {"top_buy": valid.head(5), "top_sell": valid.tail(5)}
                         col_buy, col_sell = st.columns(2)
 
                         with col_buy:

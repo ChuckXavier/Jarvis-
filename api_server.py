@@ -148,15 +148,18 @@ def get_alpha_scores():
     """Run the full ensemble and return alpha scores for all ETFs."""
     try:
         from data.db import get_all_prices
-        from signals.ensemble import compute_ensemble, get_top_bottom_etfs
+        from signals.ensemble import compute_ensemble
+        from risk.regime import get_current_regime
 
         prices = get_all_prices()
         if prices.empty:
             return JSONResponse(status_code=503, content={"error": "No price data"})
 
-        result = compute_ensemble(prices)
+        # persist=False: a dashboard view must not adapt/save the live IC
+        # weights — only the scheduler's daily run does that.
+        result = compute_ensemble(prices, persist=False)
         latest = result["latest_scores"]
-        regime = result["regime"]
+        regime = get_current_regime()["regime"]
         weights = result["weights_used"]
 
         etfs = []
@@ -180,11 +183,12 @@ def get_alpha_scores():
                 "action": action,
             })
 
-        top_bottom = get_top_bottom_etfs(latest, top_n=5)
+        valid = latest.dropna().sort_values(ascending=False)
+        top_bottom = {"top_buy": valid.head(5), "top_sell": valid.tail(5)}
 
         return {
             "regime": regime,
-            "signals_active": 4,
+            "signals_active": len(weights),
             "weights": safe_json(weights),
             "etfs": etfs,
             "top_buy": safe_json(top_bottom["top_buy"]),
