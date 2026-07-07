@@ -120,7 +120,10 @@ except Exception:
 EXPOSURE_BY_REGIME = {
     ACTIVE:   {"gross": 1.00, "net": 0.80},   # fully invested, light short hedge
     CAUTIOUS: {"gross": 0.60, "net": 0.30},   # de-risked, still deployed
-    CRISIS:   {"gross": 0.50, "net": -0.10},  # defensive, modest net-short tilt
+    CRISIS:   {"gross": 0.50, "net": 0.00},   # defensive, hedged — never net
+                                              # short (lab winner 2026-07-07:
+                                              # net-short crisis stance cost
+                                              # Sharpe AND deepened drawdown)
 }
 # Used only when ALLOW_LEVERAGE is True.
 LEVERED_EXPOSURE_BY_REGIME = {

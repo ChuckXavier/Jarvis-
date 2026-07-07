@@ -93,10 +93,124 @@ def get_last_run() -> dict:
 
 
 # ============================================================
+# REBALANCE CADENCE (lab winner 2026-07-07: 10d cadence + crisis net 0)
+# ============================================================
+
+def is_full_rebalance_day(days_since_full, cadence: int) -> bool:
+    """Pure cadence decision. None (no full rebalance on record) is always a
+    full day — a fresh system must build its book before it can hold it."""
+    return days_since_full is None or days_since_full >= cadence
+
+
+def _stop_loss_breaches(positions: dict, stop_pct: float) -> list[str]:
+    """Pure: tickers whose unrealized P&L is at or through the hard stop."""
+    return [t for t, p in positions.items()
+            if isinstance(p, dict) and p.get("unrealized_pnl_pct", 0) <= stop_pct]
+
+
+def _trading_days_since_last_full():
+    """Trading days since the last COMPLETE full rebalance, computed from
+    pipeline_runs. The cadence clock lives in Postgres, never in memory —
+    V2 died of in-memory counters. STOPCHECK rows don't match the LIKE
+    filter, so skip days never reset the clock. None = never rebalanced,
+    or the lookup failed (both default to a full run — the safe direction)."""
+    try:
+        from sqlalchemy import text
+        from data.db import engine
+        with engine.begin() as conn:
+            last = conn.execute(text(
+                "SELECT MAX(run_at) FROM pipeline_runs "
+                "WHERE status LIKE 'COMPLETE%'")).scalar()
+        if last is None:
+            return None
+        import numpy as np
+        return int(np.busday_count(last.date(),
+                                   datetime.now(timezone.utc).date()))
+    except Exception as e:
+        logger.warning(f"cadence lookup failed ({e}) — defaulting to FULL run")
+        return None
+
+
+def run_stop_check(days_since_full: int) -> dict:
+    """
+    Skip-day pass between full rebalances. The book is held, never blind:
+    data still updates, the regime machine still gets its daily vote (its
+    confirmation counters assume daily evaluation), and the hard per-position
+    stop-loss is enforced with direct closes. A regime TRANSITION promotes
+    the day to a full rebalance immediately — transitions are rare by
+    construction, and holding an ACTIVE book days into a fresh CRISIS would
+    defeat the machine's purpose.
+    """
+    from config.settings import LIVE_REBALANCE_DAYS, STOP_LOSS_PCT
+
+    start_time = datetime.now()
+    logger.info("=" * 60)
+    logger.info(f"JARVIS V3 — STOP-CHECK DAY ({days_since_full}/"
+                f"{LIVE_REBALANCE_DAYS} trading days since full rebalance)")
+    logger.info("=" * 60)
+    regime_name, pv, n_pos, n_closes = "UNKNOWN", 0.0, 0, 0
+
+    def finish(status, detail=""):
+        elapsed = (datetime.now() - start_time).total_seconds()
+        _record_run(status, regime_name, pv, n_pos, n_closes, elapsed, detail)
+        logger.info(f"PIPELINE {status} — {elapsed:.0f}s")
+        return {"status": status}
+
+    try:
+        # 1. Data update (regime + next rebalance need fresh prices)
+        from data.ingest import run_daily_update
+        run_daily_update()
+
+        # 2. Daily regime vote (persisted machine)
+        from config.settings import PRICE_LOOKBACK_DAYS
+        from config.universe import get_full_universe
+        from data.ingest import get_prices_for_universe
+        from risk.regime import evaluate_and_persist
+        prices = get_prices_for_universe(get_full_universe(),
+                                         PRICE_LOOKBACK_DAYS)
+        regime_info = evaluate_and_persist(prices)
+        regime_name = regime_info["regime"]
+        if regime_info["switched"]:
+            logger.warning(f"REGIME TRANSITION on a stop-check day "
+                           f"({regime_info['previous_regime']} -> {regime_name})"
+                           f" — promoting to FULL rebalance now")
+            return run_daily_pipeline(force_full=True, regime_info=regime_info)
+
+        # 3. Hard stop-loss enforcement
+        from execution.engine import ExecutionEngine
+        executor = ExecutionEngine()
+        if not executor.connect():
+            return finish("STOPCHECK ABORTED — Alpaca connection failure")
+        account = executor.get_account_info()
+        pv = account.get("portfolio_value", 0)
+        positions = executor.get_current_positions()
+        n_pos = len(positions)
+        breached = _stop_loss_breaches(positions, STOP_LOSS_PCT)
+        for t in breached:
+            result = executor.close_position(t)
+            n_closes += 1
+            logger.warning(f"  STOP-LOSS close {t}: {result}")
+
+        _save_snapshot(pv, account, positions)
+        detail = f"stops closed: {breached}" if breached else "no stops hit"
+        return finish("STOPCHECK COMPLETE", detail)
+
+    except Exception as e:
+        logger.exception(f"Stop-check error: {e}")
+        return finish("STOPCHECK ERROR", str(e))
+
+
+# ============================================================
 # THE DAILY PIPELINE
 # ============================================================
 
-def run_daily_pipeline():
+def run_daily_pipeline(force_full: bool = False, regime_info: dict = None):
+    from config.settings import LIVE_REBALANCE_DAYS
+    if not force_full:
+        since = _trading_days_since_last_full()
+        if not is_full_rebalance_day(since, LIVE_REBALANCE_DAYS):
+            return run_stop_check(since)
+
     start_time = datetime.now()
     logger.info("=" * 60)
     logger.info(f"JARVIS V3 — DAILY PIPELINE — {start_time:%Y-%m-%d %H:%M:%S}")
@@ -177,8 +291,13 @@ def run_daily_pipeline():
 
         # ── STEP 5: Regime (persisted machine — the V2 fix) ──
         logger.info("\n--- STEP 5: Regime evaluation ---")
-        from risk.regime import evaluate_and_persist
-        regime_info = evaluate_and_persist(prices, portfolio_value=pv)
+        if regime_info is None:
+            from risk.regime import evaluate_and_persist
+            regime_info = evaluate_and_persist(prices, portfolio_value=pv)
+        else:
+            # Promoted from a stop-check day: the machine already voted today;
+            # a second evaluate_and_persist would double-count its counters.
+            logger.info("  (using regime decision from today's stop-check)")
         regime_name = regime_info["regime"]
         results["regime"] = (f"{regime_name} (gross {regime_info['target_gross']:.0%}, "
                              f"net {regime_info['target_net']:+.0%})")
@@ -208,11 +327,9 @@ def run_daily_pipeline():
 
         # ── STEP 8: Stop-loss overlay (-8% hard per-position stop) ──
         from config.settings import STOP_LOSS_PCT
-        stopped = []
-        for t, p in current_positions.items():
-            if isinstance(p, dict) and p.get("unrealized_pnl_pct", 0) <= STOP_LOSS_PCT:
-                target_weights[t] = 0.0   # force a sweep close this cycle
-                stopped.append(t)
+        stopped = _stop_loss_breaches(current_positions, STOP_LOSS_PCT)
+        for t in stopped:
+            target_weights[t] = 0.0   # force a sweep close this cycle
         if stopped:
             logger.warning(f"  STOP-LOSS triggered: {stopped} "
                            f"(<= {STOP_LOSS_PCT:.0%}) — forcing closes")

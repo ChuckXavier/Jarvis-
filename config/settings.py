@@ -68,6 +68,12 @@ MIN_POSITION_PCT = 0.004            # below this, a position is dust: skip
 STOP_LOSS_PCT = -0.08               # -8% per-position stop (was -25%)
 TRAILING_STOP_PCT = -0.05           # retained for risk_engine compatibility
 
+# Live rebalance cadence (lab winner 2026-07-07: "rebal 10d + crisis net 0"
+# doubled walk-forward Sharpe 0.20 -> 0.42, mostly by halving turnover costs).
+# Between full rebalances the daily cron still updates data, feeds the regime
+# machine, and enforces STOP_LOSS_PCT — see scheduler.run_stop_check.
+LIVE_REBALANCE_DAYS = 10            # trading days between full rebalances
+
 MAX_SECTOR_NET_LONG = 0.20          # sector long-side weight cap (abs of NAV)
 MAX_SECTOR_GROSS_SHORT = 0.10       # sector short-side weight cap (abs of NAV)
 MAX_SECTOR_EXPOSURE_PCT = 0.25      # legacy name used by risk_engine; long-side
