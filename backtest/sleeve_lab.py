@@ -159,13 +159,26 @@ def main() -> int:
     ap.add_argument("--synthetic", action="store_true")
     ap.add_argument("--no-combo", action="store_true",
                     help="skip the Engine 1 re-run (faster)")
+    ap.add_argument("--exclude-classes", nargs="+", default=[], metavar="CLASS",
+                    help="asset classes to drop from the sleeve universe "
+                         "before running (e.g. --exclude-classes equity)")
     args = ap.parse_args()
+
+    excluded = {c.lower() for c in args.exclude_classes}
+    unknown = excluded - set(SLEEVE_UNIVERSE.values())
+    if unknown:
+        ap.error(f"unknown asset class(es): {sorted(unknown)}; "
+                 f"valid: {sorted(set(SLEEVE_UNIVERSE.values()))}")
+    universe = {t: c for t, c in SLEEVE_UNIVERSE.items() if c not in excluded}
+    if excluded:
+        logger.info(f"excluding {sorted(excluded)} -> "
+                    f"{len(universe)} assets remain: {sorted(universe)}")
 
     if args.synthetic:
         rng = np.random.default_rng(5)
         n_d = 900
         dates = pd.bdate_range("2021-01-04", periods=n_d)
-        cols = list(SLEEVE_UNIVERSE)
+        cols = list(universe)
         r = rng.normal(1e-4, 0.010, (n_d, len(cols)))
         px = pd.DataFrame(100 * np.exp(np.cumsum(r, 0)), index=dates,
                           columns=cols)
@@ -176,7 +189,7 @@ def main() -> int:
         return 0
 
     from data.ingest import get_prices_for_universe, download_universe_history
-    tickers = list(SLEEVE_UNIVERSE)
+    tickers = list(universe)
     lookback = int(args.years * TRADING_DAYS)
     px = get_prices_for_universe(tickers, lookback)
     missing = [t for t in tickers if t not in px.columns
@@ -209,9 +222,10 @@ def main() -> int:
         combo_df, corr = combination_table(eq["daily_returns"],
                                            res5["daily_returns"])
 
+    excl_note = f", excl {'+'.join(sorted(excluded))}" if excluded else ""
     report = _report(res5, cost_rows, _per_year(res5["daily_returns"]),
                      combo_df, corr,
-                     f"REAL DATA ({px.shape[1]} assets, {args.years}y)")
+                     f"REAL DATA ({px.shape[1]} assets, {args.years}y{excl_note})")
     print("\n" + report + "\n")
     with open("sleeve_lab_report.txt", "w") as f:
         f.write(report)
