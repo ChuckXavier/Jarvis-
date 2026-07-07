@@ -122,6 +122,19 @@ def build_report(res: dict, cost_df: pd.DataFrame, coverage: dict | None,
     return "\n".join(lines)
 
 
+def _pynum(x):
+    """Coerce numpy scalars to native Python numbers (psycopg2 can't adapt
+    np.float64 — it errors with 'schema np does not exist')."""
+    if isinstance(x, np.integer):
+        return int(x)
+    if isinstance(x, np.floating):
+        v = float(x)
+        return None if np.isnan(v) else v
+    if isinstance(x, float) and np.isnan(x):
+        return None
+    return x
+
+
 def persist_result(res: dict, cost_df: pd.DataFrame) -> None:
     """Store the run in backtest_results so the dashboard can show it."""
     try:
@@ -143,19 +156,21 @@ def persist_result(res: dict, cost_df: pd.DataFrame) -> None:
                      detail)
                 VALUES (:ts,:yr,:bps,:cagr,:sh,:so,:dd,:vol,:to,:g,:n,:d)
             """), {
-                "ts": datetime.now(timezone.utc), "yr": res["years"],
-                "bps": res["cost_bps_per_side"], "cagr": res["cagr"],
-                "sh": res["sharpe"], "so": res["sortino"],
-                "dd": res["max_drawdown"], "vol": res["ann_vol"],
-                "to": res["annual_turnover_x"], "g": res["avg_gross"],
-                "n": res["avg_net"],
+                "ts": datetime.now(timezone.utc), "yr": _pynum(res["years"]),
+                "bps": _pynum(res["cost_bps_per_side"]),
+                "cagr": _pynum(res["cagr"]),
+                "sh": _pynum(res["sharpe"]), "so": _pynum(res["sortino"]),
+                "dd": _pynum(res["max_drawdown"]),
+                "vol": _pynum(res["ann_vol"]),
+                "to": _pynum(res["annual_turnover_x"]),
+                "g": _pynum(res["avg_gross"]), "n": _pynum(res["avg_net"]),
                 "d": json.dumps({
-                    "regime_share": res["regime_share"],
-                    "per_regime_sharpe": {k: (None if (isinstance(v, float)
-                                              and np.isnan(v)) else v)
-                                          for k, v in
+                    "regime_share": {k: _pynum(v) for k, v in
+                                     res["regime_share"].items()},
+                    "per_regime_sharpe": {k: _pynum(v) for k, v in
                                           res["per_regime_sharpe"].items()},
-                    "cost_table": cost_df.to_dict("records"),
+                    "cost_table": [{k: _pynum(v) for k, v in row.items()}
+                                   for row in cost_df.to_dict("records")],
                 })[:2000],
             })
         logger.info("result persisted to backtest_results")
