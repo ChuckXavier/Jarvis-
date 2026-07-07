@@ -330,6 +330,8 @@ def run_scheduler():
     """
     from apscheduler.schedulers.blocking import BlockingScheduler
     from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.events import (EVENT_JOB_SUBMITTED, EVENT_JOB_EXECUTED,
+                                    EVENT_JOB_ERROR, EVENT_JOB_MISSED)
 
     try:
         _ensure_runs_table()
@@ -346,12 +348,37 @@ def run_scheduler():
         misfire_grace_time=3600,
         coalesce=True,
     )
-    logger.info("Scheduler started — pipeline at 10:00 AM ET weekdays "
-                "(DST-aware)")
+
+    # Audit trail: every trigger event is logged, so "no pipeline today" is
+    # always distinguishable from "scheduler silently dead" in the logs.
+    def _on_job_event(event):
+        if event.code == EVENT_JOB_SUBMITTED:
+            logger.info("CRON FIRED: daily_pipeline submitted for execution")
+        elif event.code == EVENT_JOB_EXECUTED:
+            logger.info("CRON DONE: daily_pipeline finished")
+        elif event.code == EVENT_JOB_MISSED:
+            logger.error("CRON MISSED: daily_pipeline missed its window "
+                         "(process down or blocked at 10:00 ET)")
+        elif event.code == EVENT_JOB_ERROR:
+            logger.critical(f"CRON ERROR: daily_pipeline raised: "
+                            f"{event.exception!r}")
+
+    sched.add_listener(_on_job_event,
+                       EVENT_JOB_SUBMITTED | EVENT_JOB_EXECUTED
+                       | EVENT_JOB_ERROR | EVENT_JOB_MISSED)
+
+    next_fire = sched.get_job("daily_pipeline").trigger.get_next_fire_time(
+        None, datetime.now(timezone.utc))
+    logger.info(f"Scheduler started — pipeline at 10:00 AM ET weekdays "
+                f"(DST-aware); next fire: {next_fire}")
     try:
         sched.start()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Scheduler stopped")
+    except Exception:
+        logger.critical("SCHEDULER CRASHED — the daily pipeline will NOT run "
+                        "again until the container restarts", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":
