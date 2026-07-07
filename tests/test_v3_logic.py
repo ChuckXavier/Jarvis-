@@ -254,10 +254,12 @@ check("crash demo visits >= 2 regimes", len(demo["regime_share"]) >= 2,
       str(demo["regime_share"]))
 
 print("\n[5] regime machine — persisted-counter suite (post v1.1 edit)")
+import pathlib
 import subprocess
+_risk_dir = pathlib.Path(__file__).resolve().parent.parent / "risk"
 rr = subprocess.run([sys.executable, "test_regime_logic.py"],
                     capture_output=True, text=True,
-                    cwd="/mnt/user-data/outputs/risk")
+                    cwd=str(_risk_dir))
 tail = (rr.stdout + rr.stderr).strip().splitlines()[-3:]
 print("   " + " | ".join(tail))
 check("regime suite exit 0", rr.returncode == 0)
