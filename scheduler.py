@@ -136,10 +136,10 @@ def run_stop_check(days_since_full: int) -> dict:
     Skip-day pass between full rebalances. The book is held, never blind:
     data still updates, the regime machine still gets its daily vote (its
     confirmation counters assume daily evaluation), and the hard per-position
-    stop-loss is enforced with direct closes. A regime TRANSITION promotes
-    the day to a full rebalance immediately — transitions are rare by
-    construction, and holding an ACTIVE book days into a fresh CRISIS would
-    defeat the machine's purpose.
+    stop-loss is enforced with direct closes. A regime transition is LOGGED
+    but does not trigger an early rebalance — the walk-forward that earned
+    the 10-day cadence held the book between boundaries unconditionally,
+    and live matches the tested config exactly.
     """
     from config.settings import LIVE_REBALANCE_DAYS, STOP_LOSS_PCT
 
@@ -171,10 +171,15 @@ def run_stop_check(days_since_full: int) -> dict:
         regime_info = evaluate_and_persist(prices)
         regime_name = regime_info["regime"]
         if regime_info["switched"]:
-            logger.warning(f"REGIME TRANSITION on a stop-check day "
-                           f"({regime_info['previous_regime']} -> {regime_name})"
-                           f" — promoting to FULL rebalance now")
-            return run_daily_pipeline(force_full=True, regime_info=regime_info)
+            # FUTURE LAB EXPERIMENT — "transition-triggered early rebalance":
+            # rebalancing immediately on a regime flip instead of waiting for
+            # the boundary. NOT enabled: the walk-forward that earned this
+            # cadence never did it, so it ships only if its own walk-forward
+            # beats waiting. Until then: log loudly, hold the book.
+            logger.warning(f"REGIME TRANSITION on a stop-check day: "
+                           f"{regime_info['previous_regime']} -> {regime_name} "
+                           f"— regime changed; rebalance at next 10-day "
+                           f"boundary (tested config: no early rebalance)")
 
         # 3. Hard stop-loss enforcement
         from execution.engine import ExecutionEngine
@@ -192,8 +197,13 @@ def run_stop_check(days_since_full: int) -> dict:
             logger.warning(f"  STOP-LOSS close {t}: {result}")
 
         _save_snapshot(pv, account, positions)
-        detail = f"stops closed: {breached}" if breached else "no stops hit"
-        return finish("STOPCHECK COMPLETE", detail)
+        notes = []
+        if regime_info["switched"]:
+            notes.append(f"regime transition "
+                         f"{regime_info['previous_regime']}->{regime_name}; "
+                         f"rebalance at next boundary")
+        notes.append(f"stops closed: {breached}" if breached else "no stops hit")
+        return finish("STOPCHECK COMPLETE", "; ".join(notes))
 
     except Exception as e:
         logger.exception(f"Stop-check error: {e}")
@@ -204,7 +214,7 @@ def run_stop_check(days_since_full: int) -> dict:
 # THE DAILY PIPELINE
 # ============================================================
 
-def run_daily_pipeline(force_full: bool = False, regime_info: dict = None):
+def run_daily_pipeline(force_full: bool = False):
     from config.settings import LIVE_REBALANCE_DAYS
     if not force_full:
         since = _trading_days_since_last_full()
@@ -291,13 +301,8 @@ def run_daily_pipeline(force_full: bool = False, regime_info: dict = None):
 
         # ── STEP 5: Regime (persisted machine — the V2 fix) ──
         logger.info("\n--- STEP 5: Regime evaluation ---")
-        if regime_info is None:
-            from risk.regime import evaluate_and_persist
-            regime_info = evaluate_and_persist(prices, portfolio_value=pv)
-        else:
-            # Promoted from a stop-check day: the machine already voted today;
-            # a second evaluate_and_persist would double-count its counters.
-            logger.info("  (using regime decision from today's stop-check)")
+        from risk.regime import evaluate_and_persist
+        regime_info = evaluate_and_persist(prices, portfolio_value=pv)
         regime_name = regime_info["regime"]
         results["regime"] = (f"{regime_name} (gross {regime_info['target_gross']:.0%}, "
                              f"net {regime_info['target_net']:+.0%})")

@@ -72,5 +72,23 @@ from config.settings import LIVE_REBALANCE_DAYS
 
 check("LIVE_REBALANCE_DAYS is 10", LIVE_REBALANCE_DAYS == 10)
 
+print("\n[5] fidelity — skip days never promote to a full rebalance")
+# The walk-forward that earned the 10-day cadence held the book between
+# boundaries unconditionally. A regime transition on a skip day must be
+# logged, not acted on. These are source-level tripwires: they fail the
+# moment someone reintroduces promotion without a lab result to back it.
+import inspect
+
+import scheduler
+
+src = inspect.getsource(scheduler.run_stop_check)
+check("stop-check never invokes the full pipeline",
+      "run_daily_pipeline(" not in src)
+check("transition is logged as wait-for-boundary",
+      "rebalance at next" in src)
+check("full pipeline no longer accepts an injected regime decision",
+      "regime_info" not in
+      str(inspect.signature(scheduler.run_daily_pipeline)))
+
 print(f"\n{'=' * 50}\nRESULT: {PASS} passed, {FAIL} failed")
 sys.exit(1 if FAIL else 0)
